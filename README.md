@@ -1,12 +1,20 @@
-# tilemark
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/logo-dark.svg">
+    <img src="docs/brand/logo.svg" alt="tilemark" height="64">
+  </picture>
+</p>
 
-[![CI](https://github.com/thomascapelo/tilemark/actions/workflows/ci.yml/badge.svg)](https://github.com/thomascapelo/tilemark/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)
+<p align="center">
+  <a href="https://github.com/thomascapelo/tilemark/actions/workflows/ci.yml"><img src="https://github.com/thomascapelo/tilemark/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+">
+</p>
 
-Burn a tiled, hard-to-remove watermark into every PDF and image of a folder,
-before sending your ID card, payslips or tax notices to a landlord, an agency
-or a bank.
+<p align="center">
+  Burn a tiled, hard-to-remove watermark into every PDF and image of a folder,<br>
+  before sending your ID card, payslips or tax notices to a landlord, an agency or a bank.
+</p>
 
 ![A fictitious payslip before and after tilemark](docs/images/before-after.png)
 
