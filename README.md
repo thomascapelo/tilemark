@@ -107,7 +107,6 @@ python3 -m venv .venv
 - `tilemark/watermark.py` draws the randomized, tiled text on a Pillow image
 - `tilemark/processors.py` handles PDF rasterization and image cleanup
 - `tilemark/cli.py` handles prompts, the folder scan and the summary
-- `scripts/make_demo_image.py` regenerates the image above
 
 ## License
 
