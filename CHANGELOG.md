@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Redesigned terminal output.
+- Tab completion of folder paths at the folder prompt, with line editing and history.
+
 ## 0.1.0 — 2026-10-30
 
 First release.

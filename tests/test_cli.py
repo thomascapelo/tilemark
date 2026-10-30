@@ -74,12 +74,14 @@ def test_processes_folder(tmp_path, answers, capsys):
     ]
     output = capsys.readouterr().out
     assert "Agency X - " in output
-    assert "✓ id_card.pdf" in output and "(2 pages)" in output
+    assert "✓ id_card.pdf    2 pages" in output
     assert "✓ photo.JPG" in output
-    assert "⚠ notes.txt" in output and "skipped" in output
+    assert "▲ notes.txt" in output and "skipped · unsupported format" in output
     assert ".DS_Store" not in output
     assert "other.pdf" not in output
     assert "2 files watermarked" in output
+    assert "\x1b" not in output  # not a TTY: no colors
+    assert output.startswith("tilemark v")
 
 
 def test_asks_for_folder_when_missing(tmp_path, answers):
@@ -106,9 +108,9 @@ def test_bad_files_reported_others_processed(tmp_path, answers, capsys):
     out_dir = tmp_path / "watermarked"
     assert sorted(p.name for p in out_dir.iterdir()) == ["good_watermarked.pdf"]
     output = capsys.readouterr().out
-    assert "✗ protected.pdf" in output and "password" in output
-    assert "✗ broken.pdf" in output
-    assert "2 files failed" in output
+    assert "▲ protected.pdf" in output and "skipped · password" in output
+    assert "▲ broken.pdf" in output
+    assert "2 failed" in output
 
 
 def test_all_files_failing_leaves_no_output_folder(tmp_path, answers, capsys):
@@ -174,7 +176,7 @@ def test_read_only_folder(tmp_path, answers, capsys):
 def test_empty_folder(tmp_path, answers, capsys):
     answers("Agency X")
     assert main([str(tmp_path)]) == 0
-    assert "No PDF or image" in capsys.readouterr().out
+    assert "No files watermarked" in capsys.readouterr().out
     assert not (tmp_path / "watermarked").exists()
 
 
@@ -218,3 +220,62 @@ def test_ctrl_c_while_writing_leaves_no_partial_file(tmp_path, answers, monkeypa
     answers("Agency X")
     assert main([str(tmp_path)]) == 1
     assert not (tmp_path / "watermarked" / "id_card_watermarked.pdf").exists()
+
+
+def test_unexpected_error_marked_as_error(tmp_path, answers, monkeypatch, capsys):
+    make_pdf(tmp_path / "id_card.pdf")
+
+    def crash(src, dst, text, opacity):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(cli, "process_pdf", crash)
+    answers("Agency X")
+    assert main([str(tmp_path)]) == 1
+    assert "✗ id_card.pdf" in capsys.readouterr().out
+
+
+def test_no_dangling_prompt_when_input_is_piped(tmp_path, monkeypatch):
+    prompts = []
+
+    def fake_input(prompt=""):
+        prompts.append(prompt)
+        return "Agency X"
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    main([str(tmp_path)])
+    assert prompts == [""]  # pytest's stdin is not a TTY
+
+
+class FakeKeyboard:
+    def isatty(self):
+        return True
+
+
+def test_interactive_prompts_show_hints(tmp_path, monkeypatch, capsys):
+    make_pdf(tmp_path / "id_card.pdf")
+    answers = [str(tmp_path), "Agency X"]
+    prompts = []
+
+    def fake_input(prompt=""):
+        prompts.append(prompt)
+        return answers.pop(0)
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    monkeypatch.setattr("sys.stdin", FakeKeyboard())
+    assert main(["--no-date"]) == 0
+
+    output = capsys.readouterr().out
+    assert prompts == ["│  › ", "│  › "]
+    assert "│  Drag a folder here, or type its path (Tab completes)" in output
+    assert "│  Say who it is for and why" in output
+    # Without color the answer cannot be rewritten in place, and printing it
+    # again would only repeat what was typed.
+    assert output.count("Agency X") == 0
+
+
+def test_interactive_text_with_date_is_shown(tmp_path, monkeypatch, capsys):
+    answers = ["Agency X"]
+    monkeypatch.setattr("builtins.input", lambda prompt="": answers.pop(0))
+    monkeypatch.setattr("sys.stdin", FakeKeyboard())
+    main([str(tmp_path)])
+    assert "│  Agency X - " in capsys.readouterr().out

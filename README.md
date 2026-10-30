@@ -58,16 +58,23 @@ a new terminal.
 tilemark ~/Documents/rental_application
 ```
 
-Or run `tilemark` alone and drag the folder into the terminal when prompted.
+Or run `tilemark` alone and type the folder path (Tab completes folder names)
+or drag the folder into the terminal when prompted.
 You are then asked for the watermark text; today's date is appended.
 
 ```
-Watermark text: Rental application only - Dupont Agency
-→ Watermark: “Rental application only - Dupont Agency - 2026-10-30”
-  ✓ id_card.pdf   (2 pages)
-  ✓ payslip.jpg
-  ⚠ notes.txt   skipped (unsupported format)
-2 files watermarked → /Users/you/Documents/rental_application/watermarked
+ tilemark   v0.1.0 · local only, nothing leaves this machine
+
+◇  Watermark text
+│  Rental application only - Dupont Agency - 2026-10-30
+│
+◇  Processing 3 files
+│  ✓ id_card.pdf    2 pages
+│  ✓ payslip.jpg
+│  ▲ notes.txt      skipped · unsupported format
+│
+└  2 files watermarked in 0.8s
+   ~/Documents/rental_application/watermarked
 ```
 
 | Option | Effect |

@@ -1,13 +1,15 @@
 """Command-line interface: watermark every PDF and image of a folder."""
 
 import argparse
+import os
 import shlex
 import sys
+import time
 from datetime import date
 from pathlib import Path
 
-from . import __version__
-from .processors import process_image, process_pdf
+from . import __version__, completion, ui
+from .processors import ProcessingError, process_image, process_pdf
 
 OUTPUT_DIR = "watermarked"
 OUTPUT_SUFFIX = "_watermarked"
@@ -63,16 +65,40 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _ask(prompt: str) -> str:
+FOLDER_HINT = "Drag a folder here, or type its path (Tab completes)"
+TEXT_HINT = 'Say who it is for and why, e.g. "Rental application only - Dupont Agency"'
+
+
+def _ask(title: str, hint: str, *, paths: bool = False, display=str) -> str:
+    """Ask on a `◇ title` step, then replace the hint and prompt with the answer.
+
+    `display` turns the raw answer into what is shown once answered.
+    """
+    print(ui.step(title))
+    # Piped answers are not echoed, so a hint and prompt would be left dangling.
+    interactive = sys.stdin.isatty()
+    lines = 0
+    if interactive:
+        print(ui.hint(hint))
+        lines += 1
+    completion.complete_paths(paths)
     while True:
-        answer = input(prompt).strip()
+        answer = input(ui.prompt() if interactive else "").strip()
+        lines += 1
         if answer:
-            return answer
-        print("  A value is required.")
+            break
+        print(ui.clear_previous_line() + ui.warning("A value is required."))
+
+    shown = display(answer)
+    if interactive and ui.color_enabled():
+        print(ui.clear_previous_line(lines) + ui.thread(ui.style(shown, ui.DIM)))
+    elif not interactive or shown != answer:
+        print(ui.thread(ui.style(shown, ui.DIM)))
+    return answer
 
 
 def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'s' if count > 1 else ''}"
+    return f"{count} {word}{'s' if count != 1 else ''}"
 
 
 def _visible_files(folder: Path) -> list[Path]:
@@ -84,8 +110,33 @@ def _error(message: str) -> int:
     return 1
 
 
+def _process(path: Path, dst: Path, text: str, opacity: float) -> tuple[str, str]:
+    """Watermark one supported file; return its status and detail for display."""
+    if path.suffix.lower() in PDF_SUFFIXES:
+        pages, incomplete = process_pdf(path, dst, text, opacity)
+        if incomplete:
+            return "warn", "possibly incomplete: check it"
+        return "ok", _plural(pages, "page")
+    process_image(path, dst, text, opacity)
+    return "ok", ""
+
+
 def _run(args: argparse.Namespace) -> int:
-    folder = clean_path(args.folder or _ask("Folder to watermark: "))
+    print(ui.badge(__version__))
+    print()
+
+    if args.folder:
+        folder = clean_path(args.folder)
+    else:
+        folder = clean_path(
+            _ask(
+                "Folder to watermark",
+                FOLDER_HINT,
+                paths=True,
+                display=lambda raw: ui.shorten_home(clean_path(raw)),
+            )
+        )
+        print(ui.thread())
     if not folder.is_dir():
         return _error(f"“{folder}” is not a folder.")
     if folder.name == OUTPUT_DIR:
@@ -98,19 +149,27 @@ def _run(args: argparse.Namespace) -> int:
     except OSError as exc:
         return _error(f"cannot read “{folder}”: {exc.strerror}.")
 
-    text = build_text(_ask("Watermark text: "), with_date=not args.no_date)
-    print(f"→ Watermark: “{text}”")
+    with_date = not args.no_date
+    text = build_text(
+        _ask("Watermark text", TEXT_HINT, display=lambda raw: build_text(raw, with_date)),
+        with_date,
+    )
+    print(ui.thread())
+
+    print(ui.step(f"Processing {_plural(len(files), 'file')}"))
     if earlier:
         print(
-            f"  Note: {OUTPUT_DIR}/ already contains {_plural(len(earlier), 'file')} "
-            "from an earlier run; they are kept."
+            ui.warning(
+                f"{OUTPUT_DIR}/ already contains {_plural(len(earlier), 'file')} "
+                "from an earlier run; they are kept"
+            )
         )
-
+    width = max((len(path.name) for path in files), default=0) + 4
+    started = time.perf_counter()
     done = failed = 0
     for path in files:
-        suffix = path.suffix.lower()
-        if suffix not in PDF_SUFFIXES | IMAGE_SUFFIXES:
-            print(f"  ⚠ {path.name}   skipped (unsupported format)")
+        if path.suffix.lower() not in PDF_SUFFIXES | IMAGE_SUFFIXES:
+            print(ui.file_line("warn", path.name, width, "skipped · unsupported format"))
             continue
 
         try:
@@ -119,38 +178,38 @@ def _run(args: argparse.Namespace) -> int:
             return _error(f"cannot create “{output_dir}”: {exc.strerror}.")
         dst = output_dir / f"{path.stem}{OUTPUT_SUFFIX}{path.suffix}"
         try:
-            if suffix in PDF_SUFFIXES:
-                pages, incomplete = process_pdf(path, dst, text, args.opacity)
-                warning = ", possibly incomplete: check it" if incomplete else ""
-                detail = f"({_plural(pages, 'page')}{warning})"
-            else:
-                process_image(path, dst, text, args.opacity)
-                detail = ""
+            status, detail = _process(path, dst, text, args.opacity)
         except KeyboardInterrupt:
             dst.unlink(missing_ok=True)
             raise
+        except ProcessingError as exc:
+            dst.unlink(missing_ok=True)
+            print(ui.file_line("warn", path.name, width, f"skipped · {exc}"))
+            failed += 1
+            continue
         except Exception as exc:
             # One failing file must never stop the others.
             dst.unlink(missing_ok=True)
-            print(f"  ✗ {path.name}   error: {exc or type(exc).__name__}")
+            message = str(exc) or type(exc).__name__
+            print(ui.file_line("error", path.name, width, f"error · {message}"))
             failed += 1
             continue
-        print(f"  ✓ {path.name}   {detail}".rstrip())
+        print(ui.file_line(status, path.name, width, detail))
         done += 1
 
-    if done:
-        print(f"{_plural(done, 'file')} watermarked → {output_dir}")
-    elif not failed:
-        print("No PDF or image to watermark.")
-    elif output_dir.is_dir() and not any(output_dir.iterdir()):
+    if not done and output_dir.is_dir() and not any(output_dir.iterdir()):
         output_dir.rmdir()
-    if failed:
-        print(f"{_plural(failed, 'file')} failed.")
+    print(ui.thread())
+    print(ui.footer(done, failed, time.perf_counter() - started, output_dir))
     return 1 if failed else 0
 
 
 def main(argv: list[str] | None = None) -> int:
+    if os.name == "nt":
+        os.system("")  # enables ANSI escape processing in the Windows console
     args = _parse_args(argv)
+    if sys.stdin.isatty():
+        completion.install()
     try:
         return _run(args)
     except (KeyboardInterrupt, EOFError):

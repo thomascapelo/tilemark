@@ -46,6 +46,8 @@ extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+# The prompt marker is intentional, not a typo for ">".
+allowed-confusables = ["›"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["tilemark"]
