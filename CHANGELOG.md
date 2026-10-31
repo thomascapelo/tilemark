@@ -3,7 +3,10 @@
 ## Unreleased
 
 - Redesigned terminal output.
-- Tab completion of folder paths at the folder prompt, with line editing and history.
+- Files can be given instead of a folder (`tilemark id_card.pdf payslip.jpg`),
+  or dragged into the terminal at the prompt.
+- Tab completion of folders and supported files at the path prompt, with line
+  editing and history.
 - Watermark hardened against brightness, levels and color-channel removal: a
   thin outline as dark as the document's text, inverting the text it crosses,
   plus a random wave distortion. A regression test runs the attack.

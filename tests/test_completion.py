@@ -50,6 +50,31 @@ def test_hidden_folders_only_when_asked(home):
     assert complete_path(f"{home}/.h") == [f"{home}/.hidden/"]
 
 
+def test_files_with_wanted_suffixes(home):
+    (home / "Docs.PDF").write_bytes(b"x")
+    (home / "Doc.jpg").write_bytes(b"x")
+    assert complete_path(f"{home}/Doc", {".pdf", ".jpg"}) == [
+        f"{home}/Doc.jpg",
+        f"{home}/Docs.PDF",
+        f"{home}/Documents/",
+    ]
+
+
+def test_hidden_files_only_when_asked(home):
+    (home / ".secret.pdf").write_bytes(b"x")
+    assert complete_path(f"{home}/", {".pdf"}) == complete_path(f"{home}/")
+    assert complete_path(f"{home}/.s", {".pdf"}) == [f"{home}/.secret.pdf"]
+
+
+def test_readline_callback_uses_enabled_suffixes(home):
+    (home / "Dossier.pdf").write_bytes(b"x")
+    completion.complete_paths(True, {".pdf"})
+    try:
+        assert completion._complete(f"{home}/Dos", 0) == f"{home}/Dossier.pdf"
+    finally:
+        completion.complete_paths(False)
+
+
 def test_missing_folder_gives_nothing(home):
     assert complete_path(f"{home}/nope/x") == []
 

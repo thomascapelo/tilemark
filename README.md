@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  Burn a tiled, hard-to-remove watermark into every PDF and image of a folder,<br>
+  Burn a tiled, hard-to-remove watermark into your PDFs and images, a whole folder at once,<br>
   before sending your ID card, payslips or tax notices to a landlord, an agency or a bank.
 </p>
 
@@ -49,7 +49,8 @@ and the purpose across every page ("Rental application only - Dupont Agency -
   who you sent it to.
 - **Metadata is stripped**: PDF author and title, EXIF data including GPS
   location, ICC profiles, PNG text chunks.
-- **Originals are never modified.** Results go to a `watermarked/` subfolder.
+- **Originals are never modified.** Results go to a `watermarked/` subfolder
+  next to them.
 
 No visible watermark is impossible to remove: AI inpainting tools can erase a
 lot. The goal is to make removal slow and visible, and a leaked copy traceable.
@@ -71,8 +72,14 @@ a new terminal.
 tilemark ~/Documents/rental_application
 ```
 
-Or run `tilemark` alone and type the folder path (Tab completes folder names)
-or drag the folder into the terminal when prompted.
+To watermark only some files, give them instead of a folder:
+
+```bash
+tilemark ~/Documents/id_card.pdf ~/Documents/payslip.jpg
+```
+
+Or run `tilemark` alone and, when prompted, drag a folder or files into the
+terminal, or type a path (Tab completes folders and supported files).
 You are then asked for the watermark text; today's date and a reference are
 appended.
 
@@ -99,8 +106,9 @@ appended.
 | `--no-ref` | Do not add a reference nor log the run |
 | `--version` | Show the version |
 
-Supported formats: PDF, JPG/JPEG, PNG. Only files directly inside the folder
-are processed, not subfolders. Hidden files are ignored. Unsupported,
+Supported formats: PDF, JPG/JPEG, PNG. For a folder, only files directly
+inside it are processed, not subfolders, and hidden files are ignored. Files
+given one by one must be in the same folder. Unsupported,
 corrupted or password-protected files are reported and the rest are still
 processed. A PDF that looks truncated is processed but flagged
 "possibly incomplete: check it".
@@ -134,9 +142,9 @@ python3 -m venv .venv
 - `tilemark/codes.py` finds QR and 2D-Doc codes to spare
 - `tilemark/processors.py` handles PDF rasterization and image cleanup
 - `tilemark/history.py` creates references and the local history log
-- `tilemark/cli.py` handles prompts, the folder scan and the summary
+- `tilemark/cli.py` handles prompts, the folder or file selection and the summary
 - `tilemark/ui.py` and `tilemark/completion.py` render the terminal output and
-  complete folder paths
+  complete folder and file paths
 
 ## License
 

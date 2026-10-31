@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from tilemark import __version__, cli
-from tilemark.cli import build_text, clean_path, main
+from tilemark.cli import build_text, clean_paths, main
 
 from conftest import make_encrypted_pdf, make_jpeg_with_exif, make_pdf, make_truncated_pdf
 
@@ -44,18 +44,32 @@ def test_build_text_without_date():
         ("/Users/x/Lease\\ \\&\\ guarantor", "/Users/x/Lease & guarantor"),
     ],
 )
-def test_clean_path(raw, expected):
-    assert clean_path(raw) == Path(expected)
+def test_clean_paths(raw, expected):
+    assert clean_paths(raw) == [Path(expected)]
 
 
-def test_clean_path_expands_home():
-    assert clean_path("~/folder") == Path.home() / "folder"
+def test_clean_paths_expands_home():
+    assert clean_paths("~/folder") == [Path.home() / "folder"]
 
 
-def test_clean_path_existing_folder_with_apostrophe(tmp_path):
+def test_clean_paths_existing_folder_with_apostrophe(tmp_path):
     folder = tmp_path / "Pièces d'identité"
     folder.mkdir()
-    assert clean_path(str(folder)) == folder
+    assert clean_paths(str(folder)) == [folder]
+
+
+def test_clean_paths_existing_file_with_spaces(tmp_path):
+    file = tmp_path / "ID card.pdf"
+    file.write_bytes(b"x")
+    assert clean_paths(str(file)) == [file]
+
+
+def test_clean_paths_several_dropped_files():
+    # Finder drops several files as one line of escaped paths.
+    assert clean_paths("/x/ID\\ card.pdf /x/payslip.pdf ") == [
+        Path("/x/ID card.pdf"),
+        Path("/x/payslip.pdf"),
+    ]
 
 
 def test_processes_folder(tmp_path, answers, capsys):
@@ -130,9 +144,93 @@ def test_truncated_pdf_flagged_in_output(tmp_path, answers, capsys):
     assert "possibly incomplete" in capsys.readouterr().out
 
 
-def test_invalid_folder(tmp_path, capsys):
+def test_missing_path(tmp_path, capsys):
     assert main([str(tmp_path / "missing")]) == 1
-    assert "is not a folder" in capsys.readouterr().err
+    assert "not found" in capsys.readouterr().err
+
+
+def test_processes_single_file(tmp_path, answers, capsys):
+    make_pdf(tmp_path / "id_card.pdf")
+    make_jpeg_with_exif(tmp_path / "photo.jpg")
+    answers("Agency X")
+
+    assert main([str(tmp_path / "id_card.pdf")]) == 0
+
+    out_dir = tmp_path / "watermarked"
+    assert [p.name for p in out_dir.iterdir()] == ["id_card_watermarked.pdf"]
+    output = capsys.readouterr().out
+    assert "Processing 1 file" in output
+    assert "1 file watermarked" in output
+
+
+def test_processes_several_files(tmp_path, answers, capsys, isolated_home):
+    make_pdf(tmp_path / "id_card.pdf")
+    make_jpeg_with_exif(tmp_path / "photo.jpg")
+    make_pdf(tmp_path / "not_this_one.pdf")
+    answers("Agency X")
+
+    paths = [str(tmp_path / "photo.jpg"), str(tmp_path / "id_card.pdf")]
+    assert main([*paths, paths[0]]) == 0  # duplicates are processed once
+
+    out_dir = tmp_path / "watermarked"
+    assert sorted(p.name for p in out_dir.iterdir()) == [
+        "id_card_watermarked.pdf",
+        "photo_watermarked.jpg",
+    ]
+    assert "Processing 2 files" in capsys.readouterr().out
+    with (isolated_home / ".tilemark" / "history.csv").open(encoding="utf-8") as file:
+        (row,) = csv.DictReader(file)
+    assert row["folder"] == str(tmp_path)
+    assert row["files"] == "id_card.pdf; photo.jpg"
+
+
+def test_unsupported_file_given_is_skipped(tmp_path, answers, capsys):
+    (tmp_path / "notes.txt").write_text("hello")
+    answers("Agency X")
+    assert main([str(tmp_path / "notes.txt")]) == 0
+    assert "skipped · unsupported format" in capsys.readouterr().out
+    assert not (tmp_path / "watermarked").exists()
+
+
+def test_refuses_files_from_different_folders(tmp_path, capsys):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    make_pdf(tmp_path / "a" / "one.pdf")
+    make_pdf(tmp_path / "b" / "two.pdf")
+    assert main([str(tmp_path / "a" / "one.pdf"), str(tmp_path / "b" / "two.pdf")]) == 1
+    assert "same folder" in capsys.readouterr().err
+
+
+def test_refuses_folder_and_files_together(tmp_path, capsys):
+    (tmp_path / "sub").mkdir()
+    make_pdf(tmp_path / "one.pdf")
+    assert main([str(tmp_path / "sub"), str(tmp_path / "one.pdf")]) == 1
+    assert "not both" in capsys.readouterr().err
+
+
+def test_refuses_file_from_output_folder(tmp_path, capsys):
+    out_dir = tmp_path / "watermarked"
+    out_dir.mkdir()
+    make_pdf(out_dir / "id_card_watermarked.pdf")
+    assert main([str(out_dir / "id_card_watermarked.pdf")]) == 1
+    assert "tilemark output" in capsys.readouterr().err
+
+
+def test_asks_for_files_when_missing(tmp_path, answers, capsys):
+    (tmp_path / "My docs").mkdir()
+    folder = tmp_path / "My docs"
+    make_pdf(folder / "id card.pdf")
+    make_jpeg_with_exif(folder / "photo.jpg")
+    escaped = str(folder).replace(" ", "\\ ")
+    answers(f"{escaped}/id\\ card.pdf {escaped}/photo.jpg ", "Agency X")
+
+    assert main([]) == 0
+
+    assert sorted(p.name for p in (folder / "watermarked").iterdir()) == [
+        "id card_watermarked.pdf",
+        "photo_watermarked.jpg",
+    ]
+    assert "· 2 files" in capsys.readouterr().out
 
 
 def test_refuses_output_folder(tmp_path, capsys):
@@ -268,7 +366,7 @@ def test_interactive_prompts_show_hints(tmp_path, monkeypatch, capsys):
 
     output = capsys.readouterr().out
     assert prompts == ["│  › ", "│  › "]
-    assert "│  Drag a folder here, or type its path (Tab completes)" in output
+    assert "│  Drag a folder or files here, or type a path (Tab completes)" in output
     assert "│  Say who it is for and why" in output
     # Without color the answer cannot be rewritten in place, and printing it
     # again would only repeat what was typed.

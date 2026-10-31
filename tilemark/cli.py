@@ -1,4 +1,4 @@
-"""Command-line interface: watermark every PDF and image of a folder."""
+"""Command-line interface: watermark every PDF and image of a folder, or given files."""
 
 import argparse
 import os
@@ -15,6 +15,7 @@ OUTPUT_DIR = "watermarked"
 OUTPUT_SUFFIX = "_watermarked"
 PDF_SUFFIXES = {".pdf"}
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
+SUPPORTED_SUFFIXES = PDF_SUFFIXES | IMAGE_SUFFIXES
 
 
 def build_text(
@@ -28,18 +29,28 @@ def build_text(
     return text
 
 
-def clean_path(raw: str) -> Path:
-    """Accept a path pasted between quotes or dragged and dropped into the Terminal."""
+def clean_paths(raw: str) -> list[Path]:
+    """Accept paths pasted between quotes or dragged and dropped into the Terminal.
+
+    Several files dropped at once arrive on one line, separated by spaces.
+    """
     value = raw.strip()
     direct = Path(value).expanduser()
-    if direct.is_dir():
-        return direct
+    if direct.exists():
+        return [direct]
     # Undo shell quoting and escapes (\ , \', \(, \&…) added by the Terminal.
     try:
         parts = shlex.split(value)
     except ValueError:
-        return direct
-    return Path(parts[0]).expanduser() if len(parts) == 1 else direct
+        return [direct]
+    return [Path(part).expanduser() for part in parts] or [direct]
+
+
+def _describe(paths: list[Path]) -> str:
+    """Short display of the answer to the path prompt."""
+    if len(paths) == 1:
+        return ui.shorten_home(paths[0])
+    return f"{ui.shorten_home(paths[0].parent)} · {len(paths)} files"
 
 
 def _opacity(value: str) -> float:
@@ -55,9 +66,12 @@ def _opacity(value: str) -> float:
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="tilemark",
-        description="Burn a tiled watermark into every PDF and image of a folder.",
+        description="Burn a tiled watermark into every PDF and image of a folder, or into "
+        "the files given.",
     )
-    parser.add_argument("folder", nargs="?", help="folder to process (asked if omitted)")
+    parser.add_argument(
+        "paths", nargs="*", metavar="path", help="a folder, or files to process (asked if omitted)"
+    )
     parser.add_argument(
         "--opacity",
         type=_opacity,
@@ -74,7 +88,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-FOLDER_HINT = "Drag a folder here, or type its path (Tab completes)"
+PATH_HINT = "Drag a folder or files here, or type a path (Tab completes)"
 TEXT_HINT = 'Say who it is for and why, e.g. "Rental application only - Dupont Agency"'
 
 
@@ -90,7 +104,7 @@ def _ask(title: str, hint: str, *, paths: bool = False, display=str) -> str:
     if interactive:
         print(ui.hint(hint))
         lines += 1
-    completion.complete_paths(paths)
+    completion.complete_paths(paths, SUPPORTED_SUFFIXES)
     while True:
         answer = input(ui.prompt() if interactive else "").strip()
         lines += 1
@@ -119,6 +133,32 @@ def _error(message: str) -> int:
     return 1
 
 
+class TargetError(Exception):
+    """The paths given cannot be processed together."""
+
+
+def _targets(paths: list[Path]) -> tuple[Path, list[Path] | None]:
+    """The folder that receives watermarked/, and the files given (None for a whole folder)."""
+    for path in paths:
+        if not path.exists():
+            raise TargetError(f"“{path}” not found.")
+    if any(path.is_dir() for path in paths):
+        if len(paths) > 1:
+            raise TargetError("give one folder, or files, not both.")
+        folder = paths[0]
+        if folder.name == OUTPUT_DIR:
+            raise TargetError(f"“{folder}” is a tilemark output folder; pick the original folder.")
+        return folder, None
+
+    folder = paths[0].parent
+    if any(path.parent.resolve() != folder.resolve() for path in paths):
+        raise TargetError("files must all be in the same folder.")
+    if folder.name == OUTPUT_DIR:
+        raise TargetError(f"“{paths[0]}” is a tilemark output; pick the original file.")
+    unique = {path.resolve(): path for path in paths}
+    return folder, sorted(unique.values(), key=lambda path: path.name.casefold())
+
+
 def _process(path: Path, dst: Path, text: str, opacity: float) -> tuple[str, str]:
     """Watermark one supported file; return its status and detail for display."""
     if path.suffix.lower() in PDF_SUFFIXES:
@@ -134,29 +174,31 @@ def _run(args: argparse.Namespace) -> int:
     print(ui.badge(__version__))
     print()
 
-    if args.folder:
-        folder = clean_path(args.folder)
+    if args.paths:
+        paths = [Path(path).expanduser() for path in args.paths]
     else:
-        folder = clean_path(
+        paths = clean_paths(
             _ask(
-                "Folder to watermark",
-                FOLDER_HINT,
+                "Folder or files to watermark",
+                PATH_HINT,
                 paths=True,
-                display=lambda raw: ui.shorten_home(clean_path(raw)),
+                display=lambda raw: _describe(clean_paths(raw)),
             )
         )
         print(ui.thread())
-    if not folder.is_dir():
-        return _error(f"“{folder}” is not a folder.")
-    if folder.name == OUTPUT_DIR:
-        return _error(f"“{folder}” is a tilemark output folder; pick the original folder.")
+    try:
+        folder, files = _targets(paths)
+    except TargetError as exc:
+        return _error(str(exc))
 
     output_dir = folder / OUTPUT_DIR
-    try:
-        files = _visible_files(folder)
-        earlier = _visible_files(output_dir) if output_dir.is_dir() else []
-    except OSError as exc:
-        return _error(f"cannot read “{folder}”: {exc.strerror}.")
+    earlier = []
+    if files is None:
+        try:
+            files = _visible_files(folder)
+            earlier = _visible_files(output_dir) if output_dir.is_dir() else []
+        except OSError as exc:
+            return _error(f"cannot read “{folder}”: {exc.strerror}.")
 
     with_date = not args.no_date
     ref = None if args.no_ref else history.new_reference()
@@ -180,7 +222,7 @@ def _run(args: argparse.Namespace) -> int:
     done = failed = 0
     watermarked = []
     for path in files:
-        if path.suffix.lower() not in PDF_SUFFIXES | IMAGE_SUFFIXES:
+        if path.suffix.lower() not in SUPPORTED_SUFFIXES:
             print(ui.file_line("warn", path.name, width, "skipped · unsupported format"))
             continue
 
