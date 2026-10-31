@@ -31,15 +31,28 @@ and the purpose across every page ("Rental application only - Dupont Agency -
 - **The watermark is part of the pixels.** PDF pages are rasterized and rebuilt
   as images: there is no layer to delete in a PDF editor and no selectable text
   left underneath.
-- **No predictable pattern.** Angle, tiling offset and per-copy opacity are
-  randomized for every file, so the overlay cannot simply be rebuilt and
-  subtracted.
+- **No retouching shortcut.** Each copy of the text has a thin outline that
+  is as dark as your document's own text on blank paper, and that inverts the
+  text it crosses. No brightness, contrast, "levels" or color-channel
+  adjustment can separate the watermark from the document: removing it means
+  either keeping visible traces or punching holes in the text. A test in the
+  suite runs that attack at every threshold to keep it that way.
+- **No predictable pattern.** Angle, tiling offset, a wave distortion and
+  per-copy strength are randomized for every file, so the overlay cannot simply
+  be rebuilt and subtracted.
+- **QR codes and 2D-Doc stay scannable.** Codes found on a page are left
+  untouched, so a landlord can still check that your tax notice or payslip is
+  genuine.
+- **Every copy is traceable.** A short reference (`Ref 7KQ2`) is added to the
+  text and logged with the date, recipient text and files in
+  `~/.tilemark/history.csv`, on your computer only. If a copy leaks, you know
+  who you sent it to.
 - **Metadata is stripped**: PDF author and title, EXIF data including GPS
   location, ICC profiles, PNG text chunks.
 - **Originals are never modified.** Results go to a `watermarked/` subfolder.
 
-No watermark is impossible to remove, but a dense, explicit one makes misuse
-slow, visible and not worth the effort.
+No visible watermark is impossible to remove: AI inpainting tools can erase a
+lot. The goal is to make removal slow and visible, and a leaked copy traceable.
 
 ## Install
 
@@ -60,13 +73,14 @@ tilemark ~/Documents/rental_application
 
 Or run `tilemark` alone and type the folder path (Tab completes folder names)
 or drag the folder into the terminal when prompted.
-You are then asked for the watermark text; today's date is appended.
+You are then asked for the watermark text; today's date and a reference are
+appended.
 
 ```
  tilemark   v0.1.0 · local only, nothing leaves this machine
 
 ◇  Watermark text
-│  Rental application only - Dupont Agency - 2026-10-30
+│  Rental application only - Dupont Agency - 2026-10-30 - Ref 7KQ2
 │
 ◇  Processing 3 files
 │  ✓ id_card.pdf    2 pages
@@ -75,12 +89,14 @@ You are then asked for the watermark text; today's date is appended.
 │
 └  2 files watermarked in 0.8s
    ~/Documents/rental_application/watermarked
+   Ref 7KQ2 · logged in ~/.tilemark/history.csv
 ```
 
 | Option | Effect |
 |---|---|
 | `--opacity 0.4` | Watermark strength, from 0.05 to 1.0 (default 0.30) |
 | `--no-date` | Do not append today's date |
+| `--no-ref` | Do not add a reference nor log the run |
 | `--version` | Show the version |
 
 Supported formats: PDF, JPG/JPEG, PNG. Only files directly inside the folder
@@ -96,9 +112,12 @@ protects much less than "Rental application only - Dupont Agency".
 
 1. Each PDF page is rendered at 150 DPI with [PDFium](https://pdfium.googlesource.com/pdfium/)
    (via `pypdfium2`), including annotations and filled-in form fields.
-2. The text is drawn on a transparent layer, repeated in staggered rows, rotated
-   by 30° ± 5°, and blended into the page.
-3. A new PDF is assembled from the JPEG page images, with the original page
+2. QR codes and Data Matrix codes (2D-Doc) are located with
+   [zxing-cpp](https://github.com/zxing-cpp/zxing-cpp) so they can be spared.
+3. The text is tiled in staggered rows from a random offset, given a random
+   wave, rotated by 30° ± 5°, then applied twice: a light gray fill for
+   legibility and a thin outline that inverts the page beneath it.
+4. A new PDF is assembled from the JPEG page images, with the original page
    sizes. Images are saved in their original format without metadata.
 
 ## Development
@@ -111,11 +130,16 @@ python3 -m venv .venv
 .venv/bin/ruff format .   # format
 ```
 
-- `tilemark/watermark.py` draws the randomized, tiled text on a Pillow image
+- `tilemark/watermark.py` draws the randomized, tiled, outlined text on a Pillow image
+- `tilemark/codes.py` finds QR and 2D-Doc codes to spare
 - `tilemark/processors.py` handles PDF rasterization and image cleanup
+- `tilemark/history.py` creates references and the local history log
 - `tilemark/cli.py` handles prompts, the folder scan and the summary
+- `tilemark/ui.py` and `tilemark/completion.py` render the terminal output and
+  complete folder paths
 
 ## License
 
 [MIT](LICENSE). Dependencies: [pypdfium2](https://github.com/pypdfium2-team/pypdfium2)
-(Apache-2.0 / BSD-3-Clause) and [Pillow](https://python-pillow.org/) (MIT-CMU).
+(Apache-2.0 / BSD-3-Clause), [Pillow](https://python-pillow.org/) (MIT-CMU) and
+[zxing-cpp](https://github.com/zxing-cpp/zxing-cpp) (Apache-2.0).

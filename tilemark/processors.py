@@ -6,6 +6,7 @@ from pathlib import Path
 import pypdfium2 as pdfium
 from PIL import Image, ImageOps
 
+from .codes import find_codes
 from .watermark import apply_watermark
 
 DPI = 150
@@ -14,6 +15,11 @@ JPEG_QUALITY = 85
 
 class ProcessingError(Exception):
     """Expected per-file failure; the message is shown to the user as is."""
+
+
+def _mark(image: Image.Image, text: str, opacity: float) -> Image.Image:
+    """Watermark one page or picture, sparing its QR and 2D-Doc codes."""
+    return apply_watermark(image, text, opacity, keep_clear=find_codes(image))
 
 
 def _open_pdf(src: Path) -> pdfium.PdfDocument:
@@ -44,7 +50,7 @@ def process_pdf(src: Path, dst: Path, text: str, opacity: float) -> tuple[int, b
             # Size and rendering both account for the page's own rotation.
             width, height = page.get_size()
             image = page.render(scale=DPI / 72).to_pil()
-            marked = apply_watermark(image, text, opacity)
+            marked = _mark(image, text, opacity)
 
             buffer = io.BytesIO()
             marked.save(buffer, format="JPEG", quality=JPEG_QUALITY)
@@ -81,7 +87,7 @@ def process_image(src: Path, dst: Path, text: str, opacity: float) -> None:
     try:
         with Image.open(src) as image:
             upright = ImageOps.exif_transpose(image)
-            marked = apply_watermark(_flatten(upright), text, opacity)
+            marked = _mark(_flatten(upright), text, opacity)
     except (OSError, Image.DecompressionBombError) as exc:
         raise ProcessingError("unreadable or corrupted image") from exc
 

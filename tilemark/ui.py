@@ -123,6 +123,11 @@ def file_line(status: str, name: str, width: int, detail: str = "") -> str:
     return thread(f"{symbol} {name.ljust(width)}{style(detail, DIM)}")
 
 
+def note(text: str) -> str:
+    """Dim line aligned under the footer's path."""
+    return f"   {style(text, DIM)}"
+
+
 def footer(done: int, failed: int, seconds: float, output_dir: Path) -> str:
     end = style(_symbol("end"), THREAD)
     failures = style(f" · {failed} failed", ACCENT) if failed else ""

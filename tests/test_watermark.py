@@ -1,6 +1,6 @@
 import random
 
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageDraw
 
 from tilemark.watermark import apply_watermark
 
@@ -64,3 +64,60 @@ def test_layout_reproducible_with_seeded_rng():
     first = apply_watermark(original, "Test", rng=random.Random(42))
     second = apply_watermark(original, "Test", rng=random.Random(42))
     assert ImageChops.difference(first, second).getbbox() is None
+
+
+def _document():
+    """Black text on white paper, like most supporting documents."""
+    from tilemark.watermark import _load_font
+
+    doc = Image.new("RGB", (1240, 900), "white")
+    draw = ImageDraw.Draw(doc)
+    font = _load_font(34)
+    for line in range(14):
+        draw.text(
+            (80, 60 + line * 58),
+            f"Jane Doe 0000-1234-{line:04d}  1,0{line:02d}.00",
+            font=font,
+            fill=25,
+        )
+    return doc
+
+
+def _whiten_above(gray, threshold):
+    return gray.point(lambda v: 255 if v >= threshold else v)
+
+
+def _channel_max(image):
+    red, green, blue = image.split()
+    return ImageChops.lighter(ImageChops.lighter(red, green), blue)
+
+
+def test_no_brightness_threshold_cleans_the_document():
+    """The "levels" attack: whiten everything lighter than some gray.
+
+    For every threshold, the attacker must either keep visible watermark
+    traces or lose the document's own text.
+    """
+    doc = _document()
+    marked = apply_watermark(doc, "Rental application only - Dupont Agency", rng=random.Random(5))
+    clean = doc.convert("L")
+    text_pixels = sum(1 for v in clean.get_flattened_data() if v < 90)
+    for attacked_source in (marked.convert("L"), _channel_max(marked)):
+        for threshold in range(30, 255, 5):
+            attacked = _whiten_above(attacked_source, threshold)
+            reference = _whiten_above(clean, threshold)
+            differing = ImageChops.difference(attacked, reference).point(
+                lambda v: 255 if v > 80 else 0
+            )
+            traces = differing.histogram()[255] / (doc.width * doc.height)
+            text_kept = sum(1 for v in reference.get_flattened_data() if v < 90) / text_pixels
+            cleaned = traces < 0.01 and text_kept > 0.9
+            assert not cleaned, f"threshold {threshold} removes the watermark ({traces:.2%} left)"
+
+
+def test_keep_clear_areas_are_untouched():
+    original = Image.new("RGB", (800, 600), (200, 210, 220))
+    box = (500, 350, 700, 550)
+    result = apply_watermark(original, "Test", keep_clear=[box], rng=random.Random(1))
+    assert result.crop(box).tobytes() == original.crop(box).tobytes()
+    assert ImageChops.difference(original, result).getbbox() is not None

@@ -1,4 +1,6 @@
+import csv
 import os
+import re
 from datetime import date
 from pathlib import Path
 
@@ -262,7 +264,7 @@ def test_interactive_prompts_show_hints(tmp_path, monkeypatch, capsys):
 
     monkeypatch.setattr("builtins.input", fake_input)
     monkeypatch.setattr("sys.stdin", FakeKeyboard())
-    assert main(["--no-date"]) == 0
+    assert main(["--no-date", "--no-ref"]) == 0
 
     output = capsys.readouterr().out
     assert prompts == ["│  › ", "│  › "]
@@ -279,3 +281,56 @@ def test_interactive_text_with_date_is_shown(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr("sys.stdin", FakeKeyboard())
     main([str(tmp_path)])
     assert "│  Agency X - " in capsys.readouterr().out
+
+
+def test_build_text_with_reference():
+    assert (
+        build_text("Agency X", today=date(2026, 10, 27), ref="7KQ2")
+        == "Agency X - 2026-10-27 - Ref 7KQ2"
+    )
+    assert build_text("Agency X", with_date=False, ref="7KQ2") == "Agency X - Ref 7KQ2"
+
+
+def test_reference_added_and_logged(tmp_path, answers, capsys, isolated_home):
+    make_pdf(tmp_path / "id_card.pdf")
+    make_jpeg_with_exif(tmp_path / "photo.jpg")
+    answers("Agency X")
+    assert main([str(tmp_path)]) == 0
+
+    output = capsys.readouterr().out
+    ref = re.search(r"Ref ([0-9A-Z]{4})", output).group(1)
+    assert f"Ref {ref} · logged in ~/.tilemark/history.csv" in output
+    with (isolated_home / ".tilemark" / "history.csv").open(encoding="utf-8") as file:
+        rows = list(csv.DictReader(file))
+    assert len(rows) == 1
+    assert rows[0]["ref"] == ref
+    assert rows[0]["text"].startswith("Agency X - ") and rows[0]["text"].endswith(f"Ref {ref}")
+    assert rows[0]["folder"] == str(tmp_path)
+    assert rows[0]["files"] == "id_card.pdf; photo.jpg"
+
+
+def test_no_ref_option(tmp_path, answers, capsys, isolated_home):
+    make_pdf(tmp_path / "id_card.pdf")
+    answers("Agency X")
+    assert main([str(tmp_path), "--no-ref"]) == 0
+    assert "Ref " not in capsys.readouterr().out
+    assert not (isolated_home / ".tilemark").exists()
+
+
+def test_nothing_logged_when_nothing_watermarked(tmp_path, answers, isolated_home):
+    (tmp_path / "notes.txt").write_text("x")
+    answers("Agency X")
+    main([str(tmp_path)])
+    assert not (isolated_home / ".tilemark").exists()
+
+
+def test_history_failure_does_not_fail_the_run(tmp_path, answers, monkeypatch, capsys):
+    make_pdf(tmp_path / "id_card.pdf")
+
+    def broken(*args, **kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(cli.history, "record", broken)
+    answers("Agency X")
+    assert main([str(tmp_path)]) == 0
+    assert "could not log Ref" in capsys.readouterr().out

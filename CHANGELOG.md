@@ -4,6 +4,14 @@
 
 - Redesigned terminal output.
 - Tab completion of folder paths at the folder prompt, with line editing and history.
+- Watermark hardened against brightness, levels and color-channel removal: a
+  thin outline as dark as the document's text, inverting the text it crosses,
+  plus a random wave distortion. A regression test runs the attack.
+- QR codes and 2D-Doc (Data Matrix) codes are left untouched so they stay
+  scannable. New dependency: zxing-cpp (Apache-2.0).
+- Each run adds a short reference (`Ref 7KQ2`) to the text and logs it in
+  `~/.tilemark/history.csv`; `--no-ref` disables both.
+- About 3× faster watermarking per page.
 
 ## 0.1.0 — 2026-10-30
 

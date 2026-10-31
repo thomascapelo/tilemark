@@ -1,9 +1,19 @@
 from pathlib import Path
 
 import pikepdf
-from PIL import Image
+import pytest
+import zxingcpp
+from PIL import Image, ImageOps
 
 SECRET_TEXT = "Jane Doe 123456789"
+
+
+@pytest.fixture(autouse=True)
+def isolated_home(tmp_path_factory, monkeypatch):
+    """Never let a test write to the real ~/.tilemark."""
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    return home
 
 
 def make_pdf(path: Path, pages: int = 2, rotate: int = 0, password: str | None = None) -> Path:
@@ -70,3 +80,25 @@ def make_16bit_gray_png(path: Path) -> Path:
     """Dark-gray 16-bit grayscale PNG, as some scanner software saves them."""
     Image.new("I;16", (400, 300), 10000).save(path, format="PNG")
     return path
+
+
+def make_code(content: str, fmt=zxingcpp.BarcodeFormat.QRCode, scale: int = 6) -> Image.Image:
+    """A QR code or Data Matrix (the 2D-Doc format) as a Pillow image."""
+    bitmap = memoryview(zxingcpp.create_barcode(content, fmt).to_image(scale=scale))
+    height, width = bitmap.shape
+    return Image.frombytes("L", (width, height), bitmap.tobytes()).convert("RGB")
+
+
+def make_page_with_code(
+    content: str, fmt=zxingcpp.BarcodeFormat.QRCode
+) -> tuple[Image.Image, tuple]:
+    """A white A4 page at 150 DPI with a code in the lower right.
+
+    Returns the page and the box of the code's dark modules (its quiet zone excluded).
+    """
+    page = Image.new("RGB", (1240, 1754), "white")
+    code = make_code(content, fmt)
+    left, top = 900, 1350
+    page.paste(code, (left, top))
+    x0, y0, x1, y1 = ImageOps.invert(code).getbbox()
+    return page, (left + x0, top + y0, left + x1, top + y1)

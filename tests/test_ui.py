@@ -154,3 +154,7 @@ def test_clear_several_lines(monkeypatch):
     assert ui.clear_previous_line(3) == ""  # no color: cannot rewrite
     use_terminal(monkeypatch)
     assert ui.clear_previous_line(3) == "\x1b[1A\x1b[2K" * 3
+
+
+def test_note_is_indented_under_the_footer():
+    assert ui.note("Ref 7KQ2 · logged") == "   Ref 7KQ2 · logged"

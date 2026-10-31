@@ -8,7 +8,7 @@ import time
 from datetime import date
 from pathlib import Path
 
-from . import __version__, completion, ui
+from . import __version__, completion, history, ui
 from .processors import ProcessingError, process_image, process_pdf
 
 OUTPUT_DIR = "watermarked"
@@ -17,10 +17,14 @@ PDF_SUFFIXES = {".pdf"}
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 
 
-def build_text(raw: str, with_date: bool = True, today: date | None = None) -> str:
+def build_text(
+    raw: str, with_date: bool = True, today: date | None = None, ref: str | None = None
+) -> str:
     text = raw.strip()
     if with_date:
         text = f"{text} - {(today or date.today()).isoformat()}"
+    if ref:
+        text = f"{text} - Ref {ref}"
     return text
 
 
@@ -61,6 +65,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="watermark opacity, from 0.05 to 1.0 (default: 0.30)",
     )
     parser.add_argument("--no-date", action="store_true", help="do not append today's date")
+    parser.add_argument(
+        "--no-ref",
+        action="store_true",
+        help="do not add a reference to the text nor log the run in ~/.tilemark/history.csv",
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser.parse_args(argv)
 
@@ -150,9 +159,11 @@ def _run(args: argparse.Namespace) -> int:
         return _error(f"cannot read “{folder}”: {exc.strerror}.")
 
     with_date = not args.no_date
+    ref = None if args.no_ref else history.new_reference()
     text = build_text(
-        _ask("Watermark text", TEXT_HINT, display=lambda raw: build_text(raw, with_date)),
+        _ask("Watermark text", TEXT_HINT, display=lambda raw: build_text(raw, with_date, ref=ref)),
         with_date,
+        ref=ref,
     )
     print(ui.thread())
 
@@ -167,6 +178,7 @@ def _run(args: argparse.Namespace) -> int:
     width = max((len(path.name) for path in files), default=0) + 4
     started = time.perf_counter()
     done = failed = 0
+    watermarked = []
     for path in files:
         if path.suffix.lower() not in PDF_SUFFIXES | IMAGE_SUFFIXES:
             print(ui.file_line("warn", path.name, width, "skipped · unsupported format"))
@@ -195,13 +207,26 @@ def _run(args: argparse.Namespace) -> int:
             failed += 1
             continue
         print(ui.file_line(status, path.name, width, detail))
+        watermarked.append(path.name)
         done += 1
 
     if not done and output_dir.is_dir() and not any(output_dir.iterdir()):
         output_dir.rmdir()
     print(ui.thread())
     print(ui.footer(done, failed, time.perf_counter() - started, output_dir))
+    if ref and watermarked:
+        _log(ref, text, folder, watermarked)
     return 1 if failed else 0
+
+
+def _log(ref: str, text: str, folder: Path, files: list[str]) -> None:
+    """Record the run so a leaked copy can be traced back; never fail the run over it."""
+    try:
+        path = history.record(ref, text, folder, files)
+    except OSError as exc:
+        print(ui.warning(f"could not log Ref {ref}: {exc.strerror or exc}"))
+        return
+    print(ui.note(f"Ref {ref} · logged in {ui.shorten_home(path)}"))
 
 
 def main(argv: list[str] | None = None) -> int:
