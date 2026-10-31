@@ -12,8 +12,9 @@
 </p>
 
 <p align="center">
-  Burn a tiled, hard-to-remove watermark into your PDFs and images, a whole folder at once,<br>
-  before sending your ID card, payslips or tax notices to a landlord, an agency or a bank.
+  Burn a watermark into your PDFs and images that is hard to remove, keeps every word readable<br>
+  and traces each copy back to its recipient. Use it before sending your ID card, payslips or
+  tax notices to a landlord, an agency or a bank.
 </p>
 
 ![A fictitious payslip before and after tilemark](docs/images/before-after.png)

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tilemark"
 dynamic = ["version"]
-description = "Burn a tiled, hard-to-remove watermark into every PDF and image of a folder."
+description = "Burn a hard-to-remove, traceable watermark into PDFs and images, keeping them readable."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

@@ -1,3 +1,3 @@
-"""Burn a tiled, hard-to-remove watermark into PDFs and images."""
+"""Burn a hard-to-remove, traceable watermark into PDFs and images, keeping them readable."""
 
 __version__ = "0.2.1"
