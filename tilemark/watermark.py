@@ -1,12 +1,13 @@
 """Watermark drawing: slanted, wavy text tiled across the whole image.
 
 The text is drawn twice from one layout: a light gray fill that keeps it
-legible, and a thin outline that inverts the page beneath it. On blank paper
-the outline is as dark as the document's own text, and where it crosses that
-text it turns it light, so no brightness, contrast or color-channel adjustment
-can separate the watermark from the document. Angle, tiling offset, wave and
-per-copy strength are random on every call, so the overlay cannot be rebuilt
-and subtracted either.
+legible, and a thin outline in the inverse of the surrounding colors. On
+paper the outline is as dark as the document's own text, so no brightness,
+contrast or color-channel adjustment can separate the watermark from the
+document; on photos and dark areas it turns light and stays visible. Where it
+crosses text printed on paper it passes behind it, so the text stays readable.
+Angle, tiling offset, wave and per-copy strength are random on every call, so
+the overlay cannot be rebuilt and subtracted either.
 """
 
 import math
@@ -14,7 +15,7 @@ import random
 import secrets
 from collections.abc import Iterable
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageOps
 
 FILL_COLOR = (80, 80, 80)
 ANGLE = 30
@@ -25,6 +26,11 @@ MIN_FONT_SIZE = 12
 FILL_GAIN = 0.75
 OUTLINE_GAIN = 3.4
 WAVE_STRIP = 8
+# Printed text: marks darker than their surroundings by INK_CONTRAST, thinner than
+# SURROUNDINGS pixels, on a background at least as light as PAPER (photos are darker).
+SURROUNDINGS = 7
+INK_CONTRAST = 60
+PAPER = 230
 
 # Fonts tried in order; Pillow's built-in font is the last resort.
 FONT_CANDIDATES = (
@@ -101,6 +107,37 @@ def _rotation(side: int, size: tuple[int, int], angle: float) -> tuple[float, ..
     return (a, b, center - a * out_x - b * out_y, d, e, center - d * out_x - e * out_y)
 
 
+def _shifted(image: Image.Image, dx: int, dy: int) -> Image.Image:
+    """`image` moved by (dx, dy), uncovered pixels black so they never win a max."""
+    moved = Image.new(image.mode, image.size)
+    moved.paste(image, (dx, dy))
+    return moved
+
+
+def _lightest(image: Image.Image, size: int) -> Image.Image:
+    """Max filter over a `size` square, as rows then columns: much faster than MaxFilter."""
+    result = image
+    for axis in ((1, 0), (0, 1)):
+        source = result
+        for distance in range(1, size // 2 + 1):
+            for sign in (1, -1):
+                offset = sign * distance
+                moved = _shifted(source, offset * axis[0], offset * axis[1])
+                result = ImageChops.lighter(result, moved)
+    return result
+
+
+def _ink(base: Image.Image, surroundings: Image.Image) -> Image.Image:
+    """Mask of the text printed on paper, grown by a pixel so the outline clears it."""
+    light = surroundings.convert("L")
+    darker = ImageChops.subtract(light, base.convert("L"))
+    ink = ImageChops.multiply(
+        darker.point(lambda value: 255 if value > INK_CONTRAST else 0),
+        light.point(lambda value: 255 if value >= PAPER else 0),
+    )
+    return _lightest(ink, 3)
+
+
 def _scaled(mask: Image.Image, factor: float) -> Image.Image:
     factor = min(1.0, factor)
     return mask.point(lambda value: round(value * factor))
@@ -142,9 +179,12 @@ def apply_watermark(
         masks.append(mask)
     fill, outline = masks
 
+    # Lightest color around each pixel: the page or photo with thin text erased.
+    surroundings = _lightest(base, SURROUNDINGS)
+    outline = ImageChops.subtract(outline, _ink(base, surroundings))
     filled = Image.composite(
         Image.new("RGB", base.size, FILL_COLOR), base, _scaled(fill, opacity * FILL_GAIN)
     )
     return Image.composite(
-        ImageOps.invert(filled), filled, _scaled(outline, opacity * OUTLINE_GAIN)
+        ImageOps.invert(surroundings), filled, _scaled(outline, opacity * OUTLINE_GAIN)
     )

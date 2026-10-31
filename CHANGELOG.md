@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1 — 2026-10-31
+
+- The watermark outline now passes behind printed text instead of cutting
+  through it: small text crossed by the watermark stays readable. It still
+  resists brightness and levels removal, and still covers photos, hair
+  included.
+
 ## 0.2.0 — 2026-10-31
 
 - Redesigned terminal output.

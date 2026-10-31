@@ -32,11 +32,14 @@ and the purpose across every page ("Rental application only - Dupont Agency -
   as images: there is no layer to delete in a PDF editor and no selectable text
   left underneath.
 - **No retouching shortcut.** Each copy of the text has a thin outline that
-  is as dark as your document's own text on blank paper, and that inverts the
-  text it crosses. No brightness, contrast, "levels" or color-channel
+  is as dark as your document's own text on blank paper, and light over photos
+  and dark areas. No brightness, contrast, "levels" or color-channel
   adjustment can separate the watermark from the document: removing it means
-  either keeping visible traces or punching holes in the text. A test in the
-  suite runs that attack at every threshold to keep it that way.
+  either keeping visible traces or erasing the text too. A test in the suite
+  runs that attack at every threshold to keep it that way.
+- **Your document stays readable.** The outline passes behind printed text
+  instead of cutting through it, so the recipient can still read every word
+  and figure.
 - **No predictable pattern.** Angle, tiling offset, a wave distortion and
   per-copy strength are randomized for every file, so the overlay cannot simply
   be rebuilt and subtracted.
@@ -84,7 +87,7 @@ You are then asked for the watermark text; today's date and a reference are
 appended.
 
 ```
- tilemark   v0.2.0 · local only, nothing leaves this machine
+ tilemark   v0.2.1 · local only, nothing leaves this machine
 
 ◇  Watermark text
 │  Rental application only - Dupont Agency - 2026-10-30 - Ref 7KQ2
@@ -124,7 +127,8 @@ protects much less than "Rental application only - Dupont Agency".
    [zxing-cpp](https://github.com/zxing-cpp/zxing-cpp) so they can be spared.
 3. The text is tiled in staggered rows from a random offset, given a random
    wave, rotated by 30° ± 5°, then applied twice: a light gray fill for
-   legibility and a thin outline that inverts the page beneath it.
+   legibility and a thin outline in the inverse of the surrounding colors,
+   which passes behind text printed on paper.
 4. A new PDF is assembled from the JPEG page images, with the original page
    sizes. Images are saved in their original format without metadata.
 

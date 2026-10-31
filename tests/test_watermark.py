@@ -1,6 +1,6 @@
 import random
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from tilemark.watermark import apply_watermark
 
@@ -113,6 +113,52 @@ def test_no_brightness_threshold_cleans_the_document():
             text_kept = sum(1 for v in reference.get_flattened_data() if v < 90) / text_pixels
             cleaned = traces < 0.01 and text_kept > 0.9
             assert not cleaned, f"threshold {threshold} removes the watermark ({traces:.2%} left)"
+
+
+def test_document_text_stays_readable_under_the_watermark():
+    """The outline passes behind printed text instead of cutting it."""
+    doc = _document()
+    clean = doc.convert("L").get_flattened_data()
+    marked = apply_watermark(doc, "Rental application only - Dupont Agency", rng=random.Random(5))
+    pairs = zip(marked.convert("L").get_flattened_data(), clean, strict=True)
+    text = [value for value, original in pairs if original < 90]
+    turned_light = sum(1 for v in text if v > 120) / len(text)
+    assert turned_light < 0.002, f"{turned_light:.2%} of the text pixels were cut"
+
+
+def _hair_photo():
+    """Mid-tone skin with a patch of thin dark strands, the texture of an ID photo's hair."""
+    rng = random.Random(3)
+    photo = Image.new("RGB", (900, 900), (200, 165, 140))
+    draw = ImageDraw.Draw(photo)
+    for _ in range(1500):
+        x, y = rng.randrange(450, 900), rng.randrange(0, 820)
+        end = (x + rng.randrange(-40, 40), y + rng.randrange(30, 80))
+        draw.line((x, y, *end), fill=(30, 22, 18), width=rng.choice([1, 2, 3]))
+    return photo
+
+
+def test_watermark_still_covers_textured_photo_areas():
+    """Thin dark strands in a photo are not mistaken for text the outline must avoid."""
+    photo = _hair_photo()
+    marked = apply_watermark(photo, "Rental application only", rng=random.Random(2))
+    changed = ImageChops.difference(marked, photo).convert("L")
+    changed = changed.point(lambda v: 255 if v > 60 else 0)
+    skin = changed.crop((0, 0, 400, 900)).histogram()[255] / (400 * 900)
+    hair = changed.crop((500, 0, 900, 800)).histogram()[255] / (400 * 800)
+    assert hair > 0.6 * skin, f"hair {hair:.2%} vs skin {skin:.2%}"
+
+
+def test_lightest_matches_pillow_max_filter():
+    from tilemark.watermark import _lightest
+
+    rng = random.Random(4)
+    image = Image.new("RGB", (60, 40))
+    image.putdata([tuple(rng.randrange(256) for _ in range(3)) for _ in range(60 * 40)])
+    expected = image.filter(ImageFilter.MaxFilter(7))
+    inner = (3, 3, 57, 37)  # MaxFilter handles the borders differently
+    result = _lightest(image, 7).crop(inner)
+    assert ImageChops.difference(result, expected.crop(inner)).getbbox() is None
 
 
 def test_keep_clear_areas_are_untouched():
