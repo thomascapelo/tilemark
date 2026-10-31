@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-10-31
 
 - Redesigned terminal output.
 - Files can be given instead of a folder (`tilemark id_card.pdf payslip.jpg`),

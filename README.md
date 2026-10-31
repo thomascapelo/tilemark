@@ -84,7 +84,7 @@ You are then asked for the watermark text; today's date and a reference are
 appended.
 
 ```
- tilemark   v0.1.0 · local only, nothing leaves this machine
+ tilemark   v0.2.0 · local only, nothing leaves this machine
 
 ◇  Watermark text
 │  Rental application only - Dupont Agency - 2026-10-30 - Ref 7KQ2
